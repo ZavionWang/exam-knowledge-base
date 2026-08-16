@@ -111,16 +111,26 @@
 
 ```bash
 # 方式一：git clone（推荐，后续更新/同步方便）
-git clone https://github.com/Zavion-commits/exam-knowledge-base.git
+git clone https://github.com/ZavionWang/exam-knowledge-base.git
 cd exam-knowledge-base
 
 # 方式二：下载 ZIP（不想用 git 的话）
 # 仓库页面右上角 Code → Download ZIP → 解压即可，效果完全一样
 ```
 
-### 第二步：让 AI 读 START-HERE
+### 第二步：把这段提示词粘给你的 AI
 
-> 你的 AI 拿到项目后，**先读根目录 `START-HERE.md`**——它会引导你的 AI 完成建档。
+打开你的 AI 客户端（Claude Code / dsh / 任何支持读文件的 AI），粘贴下面这段话（把 `<项目路径>` 换成你解压/克隆的实际路径）：
+
+```text
+我下载了考试知识库项目（exam-knowledge-base），项目路径：<项目路径>
+请先读项目根目录的 START-HERE.md，然后严格按里面的引导协议执行：
+1. 问我建档需要的信息（考什么考试、教材格式、教材路径、考纲）
+2. 根据我的回答完成建档：建科目目录、复制骨架、生成索引、摄入教材、实例化检索协议
+3. 建档完成后告诉我怎么开始刷题
+```
+
+AI 会先读 `START-HERE.md`，然后问你四个问题，再一步步完成建档。
 
 ### 第三步：回答四个问题
 
@@ -183,4 +193,4 @@ exam-knowledge-base/
 
 ## 11. License
 
-MIT © 2026 Zavion-commits
+MIT © 2026 ZavionWang
