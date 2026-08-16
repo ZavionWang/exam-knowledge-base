@@ -1,0 +1,11 @@
+# 教材原文：版权内容，默认不推公开仓库（START-HERE 第 7 步）
+**/教材原文/
+
+# 测试产物
+test-artifacts/
+*.repaired.xlsx
+
+# Obsidian/跨平台杂项（预防性）
+.obsidian/
+.trash/
+.DS_Store
