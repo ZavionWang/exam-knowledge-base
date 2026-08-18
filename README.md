@@ -127,7 +127,10 @@
 
 ```bash
 # 方式一：git clone（推荐，后续更新/同步方便）
+#   GitHub（海外/国际用户）：
 git clone https://github.com/ZavionWang/exam-knowledge-base.git
+#   Gitee 镜像（国内用户，更快更稳）：
+git clone https://gitee.com/zavionwang/exam-knowledge-base.git
 cd exam-knowledge-base
 
 # 方式二：下载 ZIP（不想用 git 的话）
