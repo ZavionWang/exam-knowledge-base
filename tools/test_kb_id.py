@@ -307,6 +307,45 @@ class KbIdTest(unittest.TestCase):
         keys = ["1.10a", "1.2", "1.1a", "1.11"]
         self.assertEqual(sorted(keys, key=kbid.natural_key), ["1.1a", "1.2", "1.10a", "1.11"])
 
+    # ── 7. ECO 式键（2026-10-16 起新增考点用 `D{域}-{A|B}-{知识点序号}`）─────
+    def test_natural_key_mixes_eco_and_legacy_keys(self):
+        """ECO 式键与教材式键同场排序不得抛 TypeError（旧实现首元素 str vs int 会炸）。"""
+        keys = ["A-4", "4.1a", "1.10a", "7", "BF-2"]
+        try:
+            out = sorted(keys, key=kbid.natural_key)
+        except TypeError as e:            # pragma: no cover
+            self.fail(f"natural_key 混合键比较抛异常：{e}")
+        self.assertEqual(len(out), len(keys))
+        # 数字开头的排在文本开头的前面（(0,n) < (1,str)），且顺序稳定
+        self.assertEqual(out[0], "1.10a")
+
+    def test_eco_form_id_is_not_double_prefixed(self):
+        """`## 考点 D1-A-E2 xx` 的 ID 必须是 `D1-A-E2`，不能自我叠加成 `D1-A-D1-A-E2`。"""
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td, "CISA", "精讲笔记")
+            base.mkdir(parents=True)
+            (base / "D1-信息系统审计流程.md").write_text(
+                "# A 规划\n\n## 考点 D1-A-E2 审计类型、评估和审查\n- **核心结论**：x\n"
+                "\n# B 执行\n\n## 考点 1.5a 审计项目管理\n- **核心结论**：y\n",
+                encoding="utf-8")
+            old_root = kbid.KB_ROOT
+            try:
+                kbid.KB_ROOT = td
+                points, _backfills, _notes = kbid.scan_notes("CISA")
+            finally:
+                kbid.KB_ROOT = old_root
+        ids = [p["id"] for p in points]
+        self.assertIn("D1-A-E2", ids)
+        self.assertIn("D1-B-1.5a", ids)          # 既有教材式键仍走原路径
+        self.assertNotIn("D1-A-D1-A-E2", ids)
+        # token 保留标题原样，供 Obsidian 锚点拼 `#考点 D1-A-E2 …`
+        self.assertEqual([p["token"] for p in points if p["id"] == "D1-A-E2"], ["D1-A-E2"])
+
+    def test_classify_accepts_eco_form(self):
+        reg = {"by_id": {"D1-A-E2": {"id": "D1-A-E2"}}, "by_key": {}}
+        level, msg = kbid.classify("D1-A-E2", reg)
+        self.assertEqual(level, "ok", msg)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -44,8 +44,8 @@ CUOTI = "错题库"
 INDEX_NAME = "_知识点索引.md"
 RECORD_NAME = "错题记录.md"
 
-# 考点号：实测 CISA 132 个考点 100% 符合，无例外
-KEY_RE = re.compile(r"^\d+\.\d+[a-z]?$")
+# 考点号：本地教材序号（`4.10a`，实测 CISA 考点 100% 符合）或 ECO 序号（`E4`，2026-10-16 起新增考点用）
+KEY_RE = re.compile(r"^(?:\d+\.\d+[a-z]?|E\d+)$")
 DOMAIN_RE = re.compile(r"^(D\d+)")
 GROUP_RE = re.compile(r"^# ([AB])\s")            # '# A 运营' / '# B 韧性'
 POINT_RE = re.compile(r"^## 考点 (\S+)\s*(.*)$")  # '## 考点 4.10a BCP 与 DRP 的关系'
@@ -99,10 +99,32 @@ def scan_notes(project):
             mp = POINT_RE.match(line)
             if mp:
                 key, title = mp.group(1), mp.group(2).strip()
+                # ECO 式键（2026-10-16 起新增考点采用）：`## 考点 D4-A-E4 系统接口`
+                # 标题里已自带域与组，只需取末段 `E<m>` 作考点号；若再拼一次前缀
+                # 会生成 `D4-A-D4-A-E4` 这种自我叠加的错误 ID。
+                # 兼容不带 `E` 的旧写法（`D4-A-4`）。
+                raw = key          # 标题里原样写的键（用于生成 Obsidian 锚点）
+                # 两种 ECO 形式：带组段 `D4-A-E4`，以及域内无 A/B 分组的 `D5-E5`
+                eco = re.match(r"^D(\d+)-([AB])-(E?\d+)$", key)
+                eco_ng = None if eco else re.match(r"^D(\d+)-(E\d+)$", key)
+                if eco or eco_ng:
+                    if eco:
+                        d, g, k = f"D{eco.group(1)}", eco.group(2), eco.group(3)
+                    else:
+                        d, g, k = f"D{eco_ng.group(1)}", None, eco_ng.group(2)
+                    if d != domain:
+                        notes.append(f"{name} 的 `{key}` 声明域为 {d}，与文件名 {domain} 不一致")
+                    points.append({
+                        "id": f"{d}-{g}-{k}" if g else f"{d}-{k}",
+                        "domain": d, "group": g, "key": k,
+                        "title": title, "token": raw, "file": rel, "line": lineno,
+                        "key_ok": True,
+                    })
+                    continue
                 points.append({
                     "id": f"{domain}-{group}-{key}" if group else f"{domain}-{key}",
                     "domain": domain, "group": group, "key": key, "title": title,
-                    "file": rel, "line": lineno,
+                    "token": raw, "file": rel, "line": lineno,
                     "key_ok": bool(KEY_RE.match(key)),
                 })
                 continue
@@ -168,7 +190,9 @@ def classify(token, reg):
                 and not re.match(r"^D\d+-(?:[AB]|BF)-", token):
             return "legacy", "旧格式·名称与键未用空格分隔（ID 段只能是机器键）"
         return "bad", "ID 段含标注/通配符/标点（ID 只能是机器键，名称放在空格之后）"
-    m = re.match(r"^D\d+-(?:[AB]|BF)-(.+)$", token) or re.match(r"^D\d+-(\d+\.\d+[a-z]?)$", token)
+    m = (re.match(r"^D\d+-(?:[AB]|BF)-(.+)$", token)
+         or re.match(r"^D\d+-(\d+\.\d+[a-z]?)$", token)
+         or re.match(r"^D\d+-(E\d+)$", token))   # 无 A/B 分组的域（D5）的 ECO 式键
     if m:
         if token in reg["by_id"]:
             return "ok", ""
@@ -306,8 +330,16 @@ HEADER = """# {project} 知识点索引（ID 注册表）
 
 
 def natural_key(s):
-    """自然排序键：让 1.2 排在 1.10 前面（纯字符串排序会反过来）"""
-    return tuple(int(t) if t.isdigit() else t for t in re.split(r"(\d+)", s or "") if t != "")
+    """自然排序键：让 1.2 排在 1.10 前面（纯字符串排序会反过来）。
+
+    每个片段带类型标记（0=数字，1=文本），保证**任意两个键都可比**。
+    旧写法直接混放 int/str，当 `A-4`（ECO 式键）与 `4.1a`（教材式键）同场排序时
+    会抛 `TypeError: '<' not supported between instances of 'str' and 'int'`。
+    """
+    return tuple(
+        (0, int(t)) if t.isdigit() else (1, t)
+        for t in re.split(r"(\d+)", s or "") if t != ""
+    )
 
 
 def cmd_index(project, out_path=None):
@@ -350,6 +382,11 @@ def cmd_resolve(arg, project):
     reg = build_registry(project)
     hit = reg["by_id"].get(arg)
     if not hit:
+        base = (arg or "").strip().split(None, 1)[0]   # 容忍 `ID 名称` 这种写法
+        hit = reg["by_id"].get(base)
+        if hit:
+            arg = base
+    if not hit:
         cands = reg["by_key"].get(arg, [])
         if len(cands) == 1:
             hit = cands[0]
@@ -365,7 +402,11 @@ def cmd_resolve(arg, project):
     print(f"ID      ：{hit['id']}")
     print(f"标题    ：{hit.get('title') or hit.get('topic')}")
     print(f"锚点    ：{hit['file']}:{hit['line']}")
-    print(f"Obsidian：[[{hit['file']}#{'考点 ' + hit['key'] + ' ' + hit['title'] if 'key' in hit else '补录 ' + hit.get('topic', '')}]]")
+    if "key" in hit:
+        anchor = "考点 " + (hit.get("token") or hit["key"]) + " " + hit["title"]
+    else:
+        anchor = "补录 " + hit.get("topic", "")
+    print(f"Obsidian：[[{hit['file']}#{anchor}]]")
     return 0
 
 
